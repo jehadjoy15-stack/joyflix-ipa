@@ -17,7 +17,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20  # Use Node 20 as required by Expo
           cache: npm
 
       - name: Install Dependencies
@@ -33,11 +33,11 @@ jobs:
 
       - name: Compile Xcode Archive (Unsigned)
         run: |
-          xcodebuild -workspace ios/joyflixapp.xcworkspace \
-                     -scheme joyflixapp \
+          xcodebuild -workspace ios/JoyFlix.xcworkspace \
+                     -scheme JoyFlix \
                      -sdk iphoneos \
                      -configuration Release \
-                     -archivePath ios/joyflixapp.xcarchive \
+                     -archivePath ios/JoyFlix.xcarchive \
                      CODE_SIGNING_ALLOWED=NO \
                      CODE_SIGNING_REQUIRED=NO \
                      clean archive
@@ -45,7 +45,7 @@ jobs:
       - name: Package compiled .app into .ipa
         run: |
           mkdir -p build/Payload
-          cp -r ios/joyflixapp.xcarchive/Products/Applications/joyflixapp.app build/Payload/
+          cp -r ios/JoyFlix.xcarchive/Products/Applications/JoyFlix.app build/Payload/
           cd build
           zip -r joyflix.ipa Payload
 
