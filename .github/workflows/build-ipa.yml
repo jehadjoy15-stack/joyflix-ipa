@@ -1,0 +1,56 @@
+name: Build Unsigned iOS IPA
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Generate iOS Native Project (Expo Prebuild)
+        run: npx expo prebuild --platform ios
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: Compile Xcode Archive (Unsigned)
+        run: |
+          xcodebuild -workspace ios/joyflixapp.xcworkspace \
+                     -scheme joyflixapp \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -archivePath ios/joyflixapp.xcarchive \
+                     CODE_SIGNING_ALLOWED=NO \
+                     CODE_SIGNING_REQUIRED=NO \
+                     clean archive
+
+      - name: Package compiled .app into .ipa
+        run: |
+          mkdir -p build/Payload
+          cp -r ios/joyflixapp.xcarchive/Products/Applications/joyflixapp.app build/Payload/
+          cd build
+          zip -r joyflix.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: joyflix-unsigned-ipa
+          path: build/joyflix.ipa

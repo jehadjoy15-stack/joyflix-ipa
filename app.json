@@ -1,21 +1,20 @@
 {
   "expo": {
-    "name": "joyflix-app",
+    "name": "JoyFlix",
     "slug": "joyflix-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/joyflix_logo.png",
     "scheme": "joyflixapp",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.joyflix.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#09090b",
+        "foregroundImage": "./assets/images/joyflix_logo.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -28,11 +27,12 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#09090b",
+          "image": "./assets/images/joyflix_logo.png",
+          "imageWidth": 150
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,
