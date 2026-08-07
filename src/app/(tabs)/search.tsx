@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Search as SearchIcon, X } from 'lucide-react-native';
-import { tmdb, TMDBItem } from '../../services/tmdb';
+import { tmdb, TMDBItem, TMDB_API_KEY } from '../../services/tmdb';
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 40) / 3;
@@ -115,7 +115,7 @@ export default function SearchScreen() {
 
       // Safe TMDB query wrapped in fetch
       const queryParams = new URLSearchParams({
-        api_key: '5f49615a995e8657ec41d3d63b65287f',
+        api_key: TMDB_API_KEY,
         ...params,
       }).toString();
 

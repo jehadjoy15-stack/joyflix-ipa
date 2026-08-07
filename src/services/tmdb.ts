@@ -1,13 +1,23 @@
-// src/services/tmdb.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // REPLACE WITH YOUR TMDB READ ACCESS TOKEN (JWT) OR API KEY
 // You can get this from https://www.themoviedb.org/settings/api
-export const TMDB_API_KEY = '5f49615a995e8657ec41d3d63b65287f'; // Placeholder/Default Key
+export const TMDB_API_KEY = '70e72ab91e1180976a71072fbcf313db'; // User's TMDB API Key
 export const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 async function fetchFromTMDB(endpoint: string, params: Record<string, string> = {}) {
+  let apiKey = TMDB_API_KEY;
+  try {
+    const customKey = await AsyncStorage.getItem('@joyflix_tmdb_key');
+    if (customKey && customKey.trim().length > 0) {
+      apiKey = customKey.trim();
+    }
+  } catch (e) {
+    console.warn('Failed to load custom TMDB key:', e);
+  }
+
   const queryParams = new URLSearchParams({
-    api_key: TMDB_API_KEY,
+    api_key: apiKey,
     ...params,
   }).toString();
 
