@@ -45,7 +45,14 @@ jobs:
       - name: Package compiled .app into .ipa
         run: |
           mkdir -p build/Payload
-          cp -r ios/JoyFlix.xcarchive/Products/Applications/JoyFlix.app build/Payload/
+          cp -r ios/JoyFlix.xcarchive/Products/Applications/*.app build/Payload/ || exit 1
+          
+          # Verify the app was copied successfully to prevent empty zip
+          if [ -z "$(ls -A build/Payload)" ]; then
+            echo "Error: No compiled .app found in Products/Applications!"
+            exit 1
+          fi
+          
           cd build
           zip -r joyflix.ipa Payload
 
