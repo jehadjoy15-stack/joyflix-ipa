@@ -377,12 +377,12 @@ export default function CustomVideoPlayerScreen() {
     );
   }
 
-  // If online, use the premium sannae web player inside WebView
+  // If online, use the premium sanae web player inside WebView
   if (!isOffline) {
     const dubParam = params.dubLang && params.dubLang !== 'Original' ? `&dub=${encodeURIComponent(params.dubLang as string)}` : '';
     const webPlayerUrl = type === 'movie'
-      ? `https://sannae.joyflix.fun/embed/movie/${tmdbId}?autoPlay=true&accent=ff2d55${dubParam}`
-      : `https://sannae.joyflix.fun/embed/tv/${tmdbId}/${season}/${episode}?autoPlay=true&accent=ff2d55${dubParam}`;
+      ? `https://sanae.joyflix.fun/?tmdb=${tmdbId}&type=movie${dubParam}`
+      : `https://sanae.joyflix.fun/?tmdb=${tmdbId}&type=tv&season=${season}&episode=${episode}${dubParam}`;
 
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
