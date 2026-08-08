@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   hero: {
-    width: width,
+    width: '100%',
     height: HERO_HEIGHT,
   },
   heroGradient: {

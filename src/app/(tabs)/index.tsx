@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   hero: {
-    width: width,
+    width: '100%',
     height: HERO_HEIGHT,
   },
   heroGradient: {
