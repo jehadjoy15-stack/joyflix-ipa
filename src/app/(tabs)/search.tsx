@@ -183,6 +183,7 @@ export default function SearchScreen() {
       {/* Main Results / Genres list */}
       {!loading && results.length === 0 && !query && !selectedGenre ? (
         <FlatList
+          key="genres_list"
           data={GENRES}
           keyExtractor={(item, index) => item?.id ? String(item.id) : String(index)}
           numColumns={2}
@@ -199,6 +200,7 @@ export default function SearchScreen() {
       ) : (
         !loading && (
           <FlatList
+            key="results_list"
             data={results}
             keyExtractor={(item, index) => item?.id ? String(item.id) : String(index)}
             numColumns={3}
