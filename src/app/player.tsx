@@ -410,6 +410,7 @@ export default function CustomVideoPlayerScreen() {
           javaScriptEnabled={true}
           domStorageEnabled={true}
           allowsFullscreenVideo={true}
+          allowsInlineMediaPlayback={true}
           mediaPlaybackRequiresUserAction={false}
           backgroundColor="#000"
         />
