@@ -381,8 +381,8 @@ export default function CustomVideoPlayerScreen() {
   if (!isOffline) {
     const dubParam = params.dubName ? `&dub=${encodeURIComponent(params.dubName as string)}&server=${encodeURIComponent(params.dubName as string)}` : '';
     const webPlayerUrl = type === 'movie'
-      ? `https://sanae.joyflix.fun/movie/${tmdbId}?key=70e72ab91e1180976a71072fbcf313db${dubParam}`
-      : `https://sanae.joyflix.fun/tv/${tmdbId}/${season}/${episode}?key=70e72ab91e1180976a71072fbcf313db${dubParam}`;
+      ? `https://sanae.joyflix.fun/?tmdb=${tmdbId}&type=movie${dubParam}`
+      : `https://sanae.joyflix.fun/?tmdb=${tmdbId}&type=tv&season=${season}&episode=${episode}${dubParam}`;
 
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>

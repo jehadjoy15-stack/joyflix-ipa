@@ -204,6 +204,7 @@ export default function SearchScreen() {
             numColumns={3}
             contentContainerStyle={styles.gridContainer}
             renderItem={({ item }) => {
+              if (!item) return null;
               const posterUrl = item.poster_path
                 ? `https://image.tmdb.org/t/p/w300${item.poster_path}`
                 : 'https://via.placeholder.com/300x450/1c1917/a855f7?text=No+Poster';
