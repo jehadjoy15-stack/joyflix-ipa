@@ -150,9 +150,9 @@ class DiscordRpcService {
       token: this.currentToken,
       capabilities: 16381,
       properties: {
-        $os: 'android',
-        $browser: 'Discord Android',
-        $device: 'Kizzy'
+        os: 'Android',
+        browser: 'Discord Android',
+        device: 'Kizzy'
       },
       presence: {
         status: 'online',
@@ -239,7 +239,7 @@ class DiscordRpcService {
           state: params.details.length > 120 ? `${params.details.substring(0, 117)}...` : params.details,
           application_id: DEFAULT_APP_ID,
           assets: {
-            large_image: largeImageId || 'mp:975822369150000000', // default cover fallback
+            ...(largeImageId ? { large_image: largeImageId } : {}),
             large_text: 'JoyFlix',
           },
           timestamps: {

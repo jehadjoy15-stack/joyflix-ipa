@@ -1,6 +1,6 @@
 // src/app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
-import { Play, Tv, Search, Settings } from 'lucide-react-native';
+import { Play, Tv, Search, Settings, Heart } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -42,6 +42,13 @@ export default function TabLayout() {
         options={{
           title: 'Search',
           tabBarIcon: ({ color, size }) => <Search color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="mylist"
+        options={{
+          title: 'My List',
+          tabBarIcon: ({ color, size }) => <Heart color={color} size={size} />,
         }}
       />
       <Tabs.Screen

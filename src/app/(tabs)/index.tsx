@@ -110,10 +110,26 @@ export default function HomeScreen() {
   const toggleWatchlist = async (id: number) => {
     try {
       let updated = [...watchlist];
-      if (updated.includes(id)) {
-        updated = updated.filter(item => item !== id);
+      const isAlreadyIn = updated.some((item: any) => 
+        item && typeof item === 'object' ? item.id === id : item === id
+      );
+
+      if (isAlreadyIn) {
+        updated = updated.filter((item: any) => 
+          item && typeof item === 'object' ? item.id !== id : item !== id
+        );
       } else {
-        updated.push(id);
+        const itemObj = heroItem && heroItem.id === id ? heroItem : null;
+        if (itemObj) {
+          updated.push({
+            id: itemObj.id,
+            type: itemObj.media_type || (itemObj.title ? 'movie' : 'tv'),
+            title: itemObj.title || itemObj.name,
+            poster_path: itemObj.poster_path,
+          } as any);
+        } else {
+          updated.push(id as any);
+        }
       }
       setWatchlist(updated);
       await AsyncStorage.setItem('@joyflix_watchlist', JSON.stringify(updated));
@@ -132,7 +148,9 @@ export default function HomeScreen() {
 
 
 
-  const inWatchlist = heroItem ? watchlist.includes(heroItem.id) : false;
+  const inWatchlist = heroItem
+    ? watchlist.some((item: any) => (item && typeof item === 'object' ? item.id === heroItem.id : item === heroItem.id))
+    : false;
 
   return (
     <ScrollView
@@ -236,20 +254,47 @@ export default function HomeScreen() {
         <View style={styles.row}>
           <Text style={styles.rowTitle}>My List</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowScroll}>
-            {trending
-              .filter(item => watchlist.includes(item.id))
-              .map(item => (
+            {watchlist.map((watchItem: any, idx) => {
+              const isObj = watchItem && typeof watchItem === 'object';
+              const itemId = isObj ? watchItem.id : watchItem;
+              
+              if (isObj) {
+                const posterUrl = watchItem.poster_path
+                  ? `https://image.tmdb.org/t/p/w300${watchItem.poster_path}`
+                  : 'https://via.placeholder.com/300x450/1c1917/a855f7?text=No+Poster';
+                
+                return (
+                  <TouchableOpacity
+                    key={`wl_${itemId}_${idx}`}
+                    style={styles.card}
+                    onPress={() => 
+                      router.push({
+                        pathname: '/watch',
+                        params: { tmdbId: itemId, type: watchItem.type },
+                      })
+                    }
+                  >
+                    <Image source={{ uri: posterUrl }} style={styles.cardImage} />
+                  </TouchableOpacity>
+                );
+              }
+              
+              const matched = trending.find(t => t.id === itemId);
+              if (!matched) return null;
+              
+              return (
                 <TouchableOpacity
-                  key={`wl_${item.id}`}
+                  key={`wl_${itemId}_${idx}`}
                   style={styles.card}
-                  onPress={() => handlePressItem(item)}
+                  onPress={() => handlePressItem(matched)}
                 >
                   <Image
-                    source={{ uri: `https://image.tmdb.org/t/p/w300${item.poster_path}` }}
+                    source={{ uri: `https://image.tmdb.org/t/p/w300${matched.poster_path}` }}
                     style={styles.cardImage}
                   />
                 </TouchableOpacity>
-              ))}
+              );
+            })}
           </ScrollView>
         </View>
       )}

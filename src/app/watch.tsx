@@ -137,10 +137,21 @@ export default function WatchDetailsScreen() {
   const toggleWatchlist = async () => {
     try {
       let updated = [...watchlist];
-      if (updated.includes(tmdbId)) {
-        updated = updated.filter(id => id !== tmdbId);
+      const isAlreadyIn = updated.some((item: any) => 
+        item && typeof item === 'object' ? item.id === tmdbId : item === tmdbId
+      );
+
+      if (isAlreadyIn) {
+        updated = updated.filter((item: any) => 
+          item && typeof item === 'object' ? item.id !== tmdbId : item !== tmdbId
+        );
       } else {
-        updated.push(tmdbId);
+        updated.push({
+          id: tmdbId,
+          type: mediaType,
+          title: details.title || details.name,
+          poster_path: details.poster_path,
+        } as any);
       }
       setWatchlist(updated);
       await AsyncStorage.setItem('@joyflix_watchlist', JSON.stringify(updated));
@@ -404,7 +415,7 @@ export default function WatchDetailsScreen() {
     );
   }
 
-  const inList = watchlist.includes(tmdbId);
+  const inList = watchlist.some((item: any) => (item && typeof item === 'object' ? item.id === tmdbId : item === tmdbId));
   const posterUrl = details.poster_path
     ? `https://image.tmdb.org/t/p/w500${details.poster_path}`
     : 'https://via.placeholder.com/300x450/1c1917/a855f7?text=No+Poster';
