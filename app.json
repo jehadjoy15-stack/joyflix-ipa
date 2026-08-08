@@ -8,7 +8,7 @@
     "scheme": "joyflixapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/joyflix_logo.png"
     },
     "android": {
       "package": "com.joyflix.app",
