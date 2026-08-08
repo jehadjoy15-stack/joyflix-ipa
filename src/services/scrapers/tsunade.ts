@@ -18,6 +18,7 @@ export interface StreamSource {
   quality: string;
   url: string;
   label: string;
+  lang?: string;
 }
 
 export interface SubtitleSource {

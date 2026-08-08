@@ -384,6 +384,7 @@ export default function WatchDetailsScreen() {
           type: mediaType,
           tmdbId,
           dubName: stream.server,
+          dubLang: stream.lang || 'Original',
           coverUrl: details.backdrop_path ? `https://image.tmdb.org/t/p/w1280${details.backdrop_path}` : undefined,
           subtitles: JSON.stringify(subtitles),
         },
