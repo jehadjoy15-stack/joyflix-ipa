@@ -20,7 +20,6 @@ import { WebView } from 'react-native-webview';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
 import { admin } from '../services/admin';
-import { discordRpc } from '../services/discordRpc';
 import { parseSRT, SubtitleCue } from '../utils/srtParser';
 
 const { width, height } = Dimensions.get('window');
@@ -39,6 +38,8 @@ export default function CustomVideoPlayerScreen() {
   const tmdbId = Number(params.tmdbId);
   const coverUrl = params.coverUrl as string;
   const subtitlesRaw = params.subtitles as string;
+  const overview = params.overview as string || '';
+  const rating = params.rating as string || '0.0';
 
   const isOffline = !!offlinePath;
   const playbackSource = isOffline ? offlinePath : streamUrl;
@@ -79,7 +80,55 @@ export default function CustomVideoPlayerScreen() {
   // Playback values
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [seekbarWidth, setSeekbarWidth] = useState(0);
+
+  const handleSeekbarTouch = (evt: any) => {
+    resetControlsTimeout();
+    const touchX = evt.nativeEvent.locationX;
+    if (seekbarWidth > 0 && duration > 0 && player) {
+      const pct = Math.max(0, Math.min(1, touchX / seekbarWidth));
+      const seekTime = pct * duration;
+      player.currentTime = seekTime;
+      setCurrentTime(seekTime);
+    }
+  };
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+
+  // Controls Visibility
+  const [showControls, setShowControls] = useState(true);
+  const controlsTimeout = useRef<any>(null);
+  const lastTap = useRef<number>(0);
+
+  const resetControlsTimeout = () => {
+    if (controlsTimeout.current) {
+      clearTimeout(controlsTimeout.current);
+    }
+    // Only auto-hide controls if video is playing
+    if (isPlaying) {
+      controlsTimeout.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3500);
+    }
+  };
+
+  const toggleControls = () => {
+    setShowControls((prev) => {
+      const next = !prev;
+      if (next) {
+        resetControlsTimeout();
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    resetControlsTimeout();
+    return () => {
+      if (controlsTimeout.current) {
+        clearTimeout(controlsTimeout.current);
+      }
+    };
+  }, []);
 
   // Gesture Controls (Swipes)
   const [brightness, setBrightness] = useState(1.0); // 1.0 = fully bright, 0.2 = dimmed (controlled via black overlay opacity)
@@ -87,6 +136,8 @@ export default function CustomVideoPlayerScreen() {
   const [hudType, setHudType] = useState<'volume' | 'brightness' | null>(null);
   const [hudValue, setHudValue] = useState(0);
   const hudTimeoutRef = useRef<any>(null);
+  const initialBrightness = useRef(1.0);
+  const initialVolume = useRef(1.0);
 
   // Settings UI
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -123,6 +174,43 @@ export default function CustomVideoPlayerScreen() {
     return () => clearInterval(interval);
   }, [player, subtitleCues]);
 
+  useEffect(() => {
+    resetControlsTimeout();
+  }, [isPlaying]);
+
+  const addToHistory = async () => {
+    try {
+      const historyStored = await AsyncStorage.getItem('@joyflix_watch_history');
+      let list = historyStored ? JSON.parse(historyStored) : [];
+      
+      const id = `${type}_${tmdbId}`;
+      
+      // Filter out duplicate if it already exists
+      list = list.filter((item: any) => item.id !== id);
+      
+      // Add to front of history list
+      list.unshift({
+        id,
+        tmdbId,
+        type,
+        title,
+        season: season ? Number(season) : undefined,
+        episode: episode ? Number(episode) : undefined,
+        posterUrl: coverUrl,
+        watchedAt: Date.now(),
+      });
+      
+      // Keep top 50 items
+      if (list.length > 50) {
+        list = list.slice(0, 50);
+      }
+      
+      await AsyncStorage.setItem('@joyflix_watch_history', JSON.stringify(list));
+    } catch (e) {
+      console.error('Failed to add to watch history:', e);
+    }
+  };
+
   // Check IP access and log request on startup
   useEffect(() => {
     const performAccessChecks = async () => {
@@ -148,17 +236,12 @@ export default function CustomVideoPlayerScreen() {
           episode: episode ? Number(episode) : undefined,
         });
 
-        // Initialize Discord RPC status in background
-        initDiscordRpc();
+        // Save to Watch History
+        addToHistory();
       }
     };
 
     performAccessChecks();
-
-    return () => {
-      // Clear Discord Rich Presence on player exit
-      discordRpc.stopActivity().then(() => discordRpc.disconnect());
-    };
   }, []);
 
   // Parse available subtitles list
@@ -180,34 +263,6 @@ export default function CustomVideoPlayerScreen() {
       }
     }
   }, [subtitlesRaw]);
-
-  const initDiscordRpc = async () => {
-    try {
-      const token = await AsyncStorage.getItem('@joyflix_discord_token');
-      const rpcVal = await AsyncStorage.getItem('@joyflix_discord_rpc_enabled');
-      const enabled = rpcVal === null ? true : rpcVal === 'true';
-
-      if (token && enabled) {
-        await discordRpc.connect(token);
-        
-        const detailsLabel = type === 'tv'
-          ? `Season ${season} Episode ${episode}`
-          : 'Movie';
-
-        await discordRpc.updatePresence({
-          title,
-          details: detailsLabel,
-          coverUrl,
-          tmdbId,
-          type,
-          season: season ? Number(season) : undefined,
-          episode: episode ? Number(episode) : undefined,
-        });
-      }
-    } catch (e) {
-      console.warn('Failed to start Discord RPC:', e);
-    }
-  };
 
   const handleSelectSubtitle = async (url: string) => {
     setSelectedSubUrl(url);
@@ -315,32 +370,56 @@ export default function CustomVideoPlayerScreen() {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt, gestureState) => {
+        resetControlsTimeout();
+        initialBrightness.current = brightness;
+        initialVolume.current = volume;
+      },
       onPanResponderMove: (evt, gestureState) => {
+        resetControlsTimeout();
         const { x0, dy } = gestureState;
         const screenHalfX = width / 2;
         
-        // Vertical swipe delta relative to screen height
-        const delta = -dy / 250; // divisor controls sensitivity
+        // Vertical swipe delta ratio relative to screen height
+        const ratio = -dy / height; 
 
         if (x0 < screenHalfX) {
-          // Left side: Brightness dimming
-          setBrightness((prev) => {
-            const next = Math.max(0.1, Math.min(1.0, prev + delta));
-            showHUD('brightness', next);
-            return next;
-          });
+          // Left side: Brightness dimming (0.1 to 1.0)
+          let newBrightness = initialBrightness.current + ratio * 1.0;
+          newBrightness = Math.max(0.1, Math.min(1.0, newBrightness));
+          setBrightness(newBrightness);
+          showHUD('brightness', newBrightness);
         } else {
-          // Right side: Volume
+          // Right side: Volume (0.0 to 1.0)
           if (player) {
-            setVolume((prev) => {
-              const next = Math.max(0.0, Math.min(1.0, prev + delta));
-              player.volume = next;
-              showHUD('volume', next);
-              return next;
-            });
+            let newVolume = initialVolume.current + ratio * 1.0;
+            newVolume = Math.max(0.0, Math.min(1.0, newVolume));
+            player.volume = newVolume;
+            setVolume(newVolume);
+            showHUD('volume', newVolume);
           }
         }
       },
+      onPanResponderRelease: (evt, gestureState) => {
+        const { dx, dy, x0 } = gestureState;
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) {
+          const now = Date.now();
+          const DOUBLE_TAP_DELAY = 300;
+          if (now - lastTap.current < DOUBLE_TAP_DELAY) {
+            // Double tap!
+            const screenHalfX = width / 2;
+            if (x0 < screenHalfX) {
+              rewind();
+            } else {
+              forward();
+            }
+          } else {
+            // Single tap: toggle controls
+            toggleControls();
+          }
+          lastTap.current = now;
+        }
+      }
     })
   ).current;
 
@@ -384,6 +463,39 @@ export default function CustomVideoPlayerScreen() {
       ? `https://sanae.joyflix.fun/?tmdb=${tmdbId}&type=movie${dubParam}`
       : `https://sanae.joyflix.fun/?tmdb=${tmdbId}&type=tv&season=${season}&episode=${episode}${dubParam}`;
 
+    const injectedJS = `
+      (function() {
+        const title = ${JSON.stringify(params.title || 'JoyFlix')};
+        const type = ${JSON.stringify(params.type || 'movie')};
+        const coverUrl = ${JSON.stringify(params.coverUrl || '')};
+        const detailText = type === 'tv' ? 'TV Show' : 'Movie';
+
+        function updateMediaSession() {
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: title,
+              artist: 'JoyFlix',
+              album: detailText,
+              artwork: coverUrl ? [{ src: coverUrl, sizes: '512x512', type: 'image/png' }] : []
+            });
+            
+            // Wire play/pause actions
+            const video = document.querySelector('video');
+            if (video) {
+              navigator.mediaSession.setActionHandler('play', () => video.play());
+              navigator.mediaSession.setActionHandler('pause', () => video.pause());
+            }
+          }
+        }
+
+        updateMediaSession();
+        document.addEventListener('play', updateMediaSession, true);
+        document.addEventListener('playing', updateMediaSession, true);
+        setInterval(updateMediaSession, 2000);
+      })();
+      true;
+    `;
+
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <StatusBar hidden={true} />
@@ -413,6 +525,8 @@ export default function CustomVideoPlayerScreen() {
           allowsInlineMediaPlayback={true}
           mediaPlaybackRequiresUserAction={false}
           backgroundColor="#000"
+          injectedJavaScript={injectedJS}
+          userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         />
       </View>
     );
@@ -428,6 +542,7 @@ export default function CustomVideoPlayerScreen() {
           player={player}
           style={StyleSheet.absoluteFill}
           allowsPictureInPicture={true}
+          nativeControls={false}
         />
         
         {/* Software Dimming Brightness Overlay */}
@@ -478,70 +593,114 @@ export default function CustomVideoPlayerScreen() {
       )}
 
       {/* CUSTOM PLAYER HUD / OVERLAY CONTROLS */}
-      <View style={styles.controlsOverlay}>
-        {/* Top Header bar */}
-        <View style={styles.topControlBar}>
-          <TouchableOpacity style={styles.controlIcon} onPress={() => router.back()}>
+      {showControls && (
+        <>
+          {/* Floating Back Button (Top Left) */}
+          <TouchableOpacity 
+            style={styles.floatingBackBtn} 
+            onPress={() => router.back()}
+          >
             <ArrowLeft color="#fff" size={24} />
           </TouchableOpacity>
-          <View style={styles.titleContainer}>
-            <Text style={styles.videoTitle} numberOfLines={1}>
-              {title}
-            </Text>
-            {season && episode ? (
-              <Text style={styles.videoSubTitle}>
-                Season {season} Episode {episode}
+
+          {/* PAUSE INFO OVERLAY (X-Ray/Netflix style overlay when video is paused) */}
+          {!isPlaying && (
+            <View style={styles.pauseInfoOverlay}>
+              <Text style={styles.pauseTitle} numberOfLines={1}>
+                {title}
               </Text>
-            ) : null}
-          </View>
-          <TouchableOpacity style={styles.controlIcon} onPress={() => setShowSettingsModal(true)}>
-            <Settings color="#fff" size={22} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Center Control Panel */}
-        <View style={styles.centerControlPanel}>
-          <TouchableOpacity style={styles.rewindBtn} onPress={rewind}>
-            <RotateCcw color="#fff" size={26} />
-            <Text style={styles.skipSecText}>10</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.playPauseBtn} onPress={togglePlay}>
-            {isPlaying ? (
-              <Pause color="#fff" size={36} fill="#fff" />
-            ) : (
-              <Play color="#fff" size={36} fill="#fff" />
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.rewindBtn} onPress={forward}>
-            <RotateCcw color="#fff" size={26} style={{ transform: [{ scaleX: -1 }] }} />
-            <Text style={styles.skipSecText}>10</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Bottom Panel (Timeline & Time Label) */}
-        <View style={styles.bottomControlPanel}>
-          <View style={styles.progressBarWrapper}>
-            <View style={styles.timelineBackground}>
-              <View style={[styles.timelineProgress, { width: `${(currentTime / duration) * 100}%` }]} />
+              <View style={styles.pauseMetaRow}>
+                {rating && rating !== '0.0' ? (
+                  <View style={styles.ratingBadge}>
+                    <Text style={styles.ratingText}>⭐ {rating}</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.pauseMetaText}>
+                  {season && episode ? `Season ${season} Episode ${episode}` : 'Movie'}
+                </Text>
+              </View>
+              {overview ? (
+                <Text style={styles.pauseDescription} numberOfLines={4}>
+                  {overview}
+                </Text>
+              ) : null}
             </View>
-            <View style={styles.timeLabelRow}>
-              <Text style={styles.timeLabelText}>
+          )}
+
+          {/* Bottom Controls Overlay */}
+          <View style={styles.bottomControlsContainer}>
+            {/* 1. Time Label (Above seekbar, aligned right) */}
+            <View style={styles.timeLabelWrapper}>
+              <Text style={styles.timeLabel}>
                 {formatTime(currentTime)} / {formatTime(duration)}
               </Text>
-              
-              {/* Skip Intro overlay (shows on double click / when playing Series) */}
-              {type === 'tv' && (
-                <TouchableOpacity style={styles.skipIntroBtn} onPress={skipIntro}>
-                  <SkipForward color="#000" size={16} fill="#000" />
-                  <Text style={styles.skipIntroText}>Skip Intro</Text>
+            </View>
+
+            {/* 2. Full-width Seekbar */}
+            <TouchableOpacity 
+              activeOpacity={1}
+              style={styles.seekbarContainer}
+              onLayout={(e) => setSeekbarWidth(e.nativeEvent.layout.width)}
+              onPress={handleSeekbarTouch}
+            >
+              <View style={styles.seekbarTrack}>
+                <View style={[styles.seekbarProgress, { width: `${(currentTime / duration) * 100}%` }]} />
+                <View style={[styles.seekbarHandle, { left: `${(currentTime / duration) * 100}%` }]} />
+              </View>
+            </TouchableOpacity>
+
+            {/* 3. Controls Buttons Row */}
+            <View style={styles.controlsRow}>
+              {/* Left Group */}
+              <View style={styles.controlsGroupLeft}>
+                <TouchableOpacity style={styles.bottomBtn} onPress={togglePlay}>
+                  {isPlaying ? (
+                    <Pause color="#fff" size={20} fill="#fff" />
+                  ) : (
+                    <Play color="#fff" size={20} fill="#fff" />
+                  )}
                 </TouchableOpacity>
-              )}
+
+                <TouchableOpacity style={styles.bottomBtn} onPress={rewind}>
+                  <RotateCcw color="#fff" size={20} />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.bottomBtn} onPress={forward}>
+                  <RotateCcw color="#fff" size={20} style={{ transform: [{ scaleX: -1 }] }} />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.bottomBtn}>
+                  <Volume2 color="#fff" size={20} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Center Group: Title */}
+              <View style={styles.controlsGroupCenter}>
+                <Text style={styles.bottomTitleText} numberOfLines={1}>
+                  {title} {season && episode ? `- S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}` : ''}
+                </Text>
+              </View>
+
+              {/* Right Group */}
+              <View style={styles.controlsGroupRight}>
+                <TouchableOpacity style={styles.bottomBtn} onPress={() => setShowSettingsModal(true)}>
+                  <Settings color="#fff" size={20} />
+                </TouchableOpacity>
+
+                {/* Subtitle/CC button */}
+                <TouchableOpacity style={styles.bottomBtn} onPress={() => setShowSettingsModal(true)}>
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>CC</Text>
+                </TouchableOpacity>
+
+                {/* Exit button */}
+                <TouchableOpacity style={styles.bottomBtn} onPress={() => router.back()}>
+                  <ArrowLeft color="#fff" size={20} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </View>
+        </>
+      )}
 
       {/* SETTINGS MENU DRAWER / MODAL */}
       <Modal
@@ -662,6 +821,54 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  pauseInfoOverlay: {
+    position: 'absolute',
+    left: 40,
+    top: '25%',
+    width: '45%',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.25)',
+  },
+  pauseTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  pauseMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  ratingBadge: {
+    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.3)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  ratingText: {
+    color: '#fbbf24',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  pauseMetaText: {
+    color: '#c084fc',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  pauseDescription: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 13,
+    lineHeight: 18,
   },
   videoWrapper: {
     flex: 1,
@@ -824,34 +1031,88 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 12,
   },
-  timelineProgress: {
+  bottomControlsContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  timeLabelWrapper: {
+    alignItems: 'flex-end',
+    marginBottom: 6,
+  },
+  timeLabel: {
+    color: '#e4e4e7',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  seekbarContainer: {
+    width: '100%',
+    height: 14,
+    justifyContent: 'center',
+  },
+  seekbarTrack: {
+    height: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 1.5,
+    position: 'relative',
+  },
+  seekbarProgress: {
     height: '100%',
     backgroundColor: '#a855f7',
-    borderRadius: 2,
+    borderRadius: 1.5,
   },
-  timeLabelRow: {
+  seekbarHandle: {
+    position: 'absolute',
+    top: -4,
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    backgroundColor: '#fff',
+    marginLeft: -5.5,
+  },
+  controlsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 8,
   },
-  timeLabelText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  skipIntroBtn: {
-    backgroundColor: '#fff',
+  controlsGroupLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
+    width: '30%',
   },
-  skipIntroText: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginLeft: 4,
+  controlsGroupCenter: {
+    width: '40%',
+    alignItems: 'center',
+  },
+  controlsGroupRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    width: '30%',
+  },
+  bottomBtn: {
+    padding: 8,
+    marginHorizontal: 4,
+  },
+  bottomTitleText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  floatingBackBtn: {
+    position: 'absolute',
+    top: 24,
+    left: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 10,
+    borderRadius: 22,
+    zIndex: 99,
   },
   modalBackdrop: {
     flex: 1,

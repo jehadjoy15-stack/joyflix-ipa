@@ -4,17 +4,17 @@
     "slug": "joyflix-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/joyflix_logo.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "joyflixapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/joyflix_logo.png"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "package": "com.joyflix.app",
       "adaptiveIcon": {
         "backgroundColor": "#09090b",
-        "foregroundImage": "./assets/images/joyflix_logo.png"
+        "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false
     },

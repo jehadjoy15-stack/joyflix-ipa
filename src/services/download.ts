@@ -1,5 +1,5 @@
 // src/services/download.ts
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface DownloadItem {
@@ -14,6 +14,18 @@ export interface DownloadItem {
   posterUrl?: string;
   downloadedAt: string;
   fileSize?: number;
+}
+
+export interface ActiveDownload {
+  id: string;
+  tmdbId: number;
+  title: string;
+  type: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+  dub: string;
+  progress: number;
+  progressText: string;
 }
 
 const DOWNLOAD_STORAGE_KEY = '@joyflix_downloads';
@@ -36,6 +48,22 @@ export function getDownloadItemId(tmdbId: number, type: 'movie' | 'tv', season?:
 }
 
 export const downloadManager = {
+  // In-memory active downloads list and listeners for reactive updates
+  activeDownloads: [] as ActiveDownload[],
+  listeners: [] as ((active: ActiveDownload[]) => void)[],
+
+  subscribeActiveDownloads(listener: (active: ActiveDownload[]) => void) {
+    this.listeners.push(listener);
+    listener([...this.activeDownloads]);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  },
+
+  notifyListeners() {
+    this.listeners.forEach(l => l([...this.activeDownloads]));
+  },
+
   // Get all completed downloads from storage
   getDownloads: async (): Promise<DownloadItem[]> => {
     try {
@@ -66,11 +94,14 @@ export const downloadManager = {
     }
   },
 
-  // Check if a specific media source is already downloaded
-  checkDownloadStatus: async (tmdbId: number, type: 'movie' | 'tv', season?: number, episode?: number, dub = 'Original'): Promise<{ downloaded: boolean; filePath: string }> => {
+  // Check if a specific media source is already downloaded (any dub)
+  checkDownloadStatus: async (tmdbId: number, type: 'movie' | 'tv', season?: number, episode?: number): Promise<{ downloaded: boolean; filePath: string }> => {
     const list = await downloadManager.getDownloads();
-    const itemId = getDownloadItemId(tmdbId, type, season, episode, dub);
-    const found = list.find(item => item.id === itemId);
+    const found = list.find(item => 
+      item.tmdbId === tmdbId && 
+      item.type === type && 
+      (type === 'tv' ? (item.season === season && item.episode === episode) : true)
+    );
     if (found) {
       return { downloaded: true, filePath: found.filePath };
     }
@@ -97,22 +128,66 @@ export const downloadManager = {
 
     console.log(`Starting download for ${meta.title} to: ${destinationPath}`);
 
+    // Create and insert into active list
+    const activeItem: ActiveDownload = {
+      id: itemId,
+      tmdbId: meta.tmdbId,
+      title: meta.title,
+      type: meta.type,
+      season: meta.season,
+      episode: meta.episode,
+      dub: meta.dub,
+      progress: 0,
+      progressText: '0%',
+    };
+    downloadManager.activeDownloads = downloadManager.activeDownloads.filter(d => d.id !== itemId);
+    downloadManager.activeDownloads.push(activeItem);
+    downloadManager.notifyListeners();
+
     // Create the download resumable object
     const downloadResumable = FileSystem.createDownloadResumable(
       streamUrl,
       destinationPath,
       {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://fmoviesunblocked.net/',
-          'Origin': 'https://fmoviesunblocked.net',
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
         }
       },
       (downloadProgress) => {
-        const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+        const expected = downloadProgress.totalBytesExpectedToWrite;
+        const progress = expected > 0
+          ? downloadProgress.totalBytesWritten / expected
+          : downloadProgress.totalBytesWritten;
+        
+        let progressText = '0%';
+        if (expected > 0) {
+          progressText = `${Math.round((downloadProgress.totalBytesWritten / expected) * 100)}%`;
+        } else {
+          progressText = `${(downloadProgress.totalBytesWritten / (1024 * 1024)).toFixed(1)} MB`;
+        }
+
+        // Update active downloads state
+        const found = downloadManager.activeDownloads.find(d => d.id === itemId);
+        if (found) {
+          found.progress = progress;
+          found.progressText = progressText;
+          downloadManager.notifyListeners();
+        }
+
         onProgress(isNaN(progress) ? 0 : progress);
       }
     );
+
+    // Delete existing file if any to prevent write/lock conflicts
+    try {
+      const existingInfo = await FileSystem.getInfoAsync(destinationPath);
+      if (existingInfo.exists) {
+        console.log(`Cleaning up pre-existing file at: ${destinationPath}`);
+        await FileSystem.deleteAsync(destinationPath, { idempotent: true });
+      }
+    } catch (err) {
+      console.warn('Pre-cleanup failed:', err);
+    }
 
     try {
       const result = await downloadResumable.downloadAsync();
@@ -146,9 +221,18 @@ export const downloadManager = {
 
       await AsyncStorage.setItem(DOWNLOAD_STORAGE_KEY, JSON.stringify(filteredList));
       console.log(`Download finished & saved for item: ${itemId}`);
+      
+      // Clean up active download
+      downloadManager.activeDownloads = downloadManager.activeDownloads.filter(d => d.id !== itemId);
+      downloadManager.notifyListeners();
+
       return newItem;
     } catch (error) {
       console.error('Download error:', error);
+      // Clean up active download
+      downloadManager.activeDownloads = downloadManager.activeDownloads.filter(d => d.id !== itemId);
+      downloadManager.notifyListeners();
+      
       // Clean up failed file if it exists
       try {
         const fileInfo = await FileSystem.getInfoAsync(destinationPath);

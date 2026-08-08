@@ -13,7 +13,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Play, Info, Plus, Check } from 'lucide-react-native';
+import { Play, Info, Plus, Check, Settings } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { tmdb, TMDBItem } from '../../services/tmdb';
 
@@ -162,14 +162,14 @@ export default function HomeScreen() {
       {/* Header overlay */}
       <View style={styles.header}>
         <Image
-          source={require('../../../assets/images/joyflix_logo.png')}
+          source={require('../../../assets/images/logo_clean.png')}
           style={styles.logo}
           resizeMode="contain"
         />
         <View style={styles.headerRight}>
           <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/(tabs)/settings')}>
             <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>J</Text>
+              <Settings color="#fff" size={18} />
             </View>
           </TouchableOpacity>
         </View>
@@ -399,6 +399,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  avatarImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#a855f7',
   },
   hero: {
     width: '100%',

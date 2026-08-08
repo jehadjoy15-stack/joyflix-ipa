@@ -7,87 +7,89 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-  Switch,
   ActivityIndicator,
   FlatList,
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { LogIn, LogOut, Trash2, Play, Download, HardDrive } from 'lucide-react-native';
+import { Trash2, Play, Download, HardDrive, Clock } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { downloadManager, DownloadItem } from '../../services/download';
+import { downloadManager, DownloadItem, ActiveDownload } from '../../services/download';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [discordToken, setDiscordToken] = useState<string | null>(null);
-  const [discordProfile, setDiscordProfile] = useState<any | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [rpcEnabled, setRpcEnabled] = useState(true);
   
+  // Watch history list
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Active downloads list
+  const [activeDownloads, setActiveDownloads] = useState<ActiveDownload[]>([]);
+
   // Downloads list
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [downloadsLoading, setDownloadsLoading] = useState(false);
 
-  const loadSettings = async () => {
+  useEffect(() => {
+    const unsubscribe = downloadManager.subscribeActiveDownloads((active) => {
+      setActiveDownloads(active);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const loadWatchHistory = async () => {
+    setHistoryLoading(true);
     try {
-      // Load Discord token
-      const token = await AsyncStorage.getItem('@joyflix_discord_token');
-      setDiscordToken(token);
-
-      // Load RPC setting
-      const rpcVal = await AsyncStorage.getItem('@joyflix_discord_rpc_enabled');
-      if (rpcVal !== null) {
-        setRpcEnabled(rpcVal === 'true');
-      }
-
-      if (token) {
-        fetchDiscordProfile(token);
+      const historyStored = await AsyncStorage.getItem('@joyflix_watch_history');
+      if (historyStored) {
+        setHistory(JSON.parse(historyStored));
       } else {
-        setDiscordProfile(null);
+        setHistory([]);
       }
     } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const fetchDiscordProfile = async (token: string) => {
-    setProfileLoading(true);
-    try {
-      const response = await fetch('https://discord.com/api/v9/users/@me', {
-        headers: { Authorization: token },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setDiscordProfile(data);
-      } else {
-        // Token expired/invalid, clear it
-        logoutDiscord();
-      }
-    } catch (e) {
-      console.error('Failed to fetch Discord profile:', e);
+      console.error('Failed to load watch history:', e);
     } finally {
-      setProfileLoading(false);
+      setHistoryLoading(false);
     }
   };
 
-  const logoutDiscord = async () => {
+  const clearWatchHistory = async () => {
+    Alert.alert(
+      'Clear Watch History',
+      'Are you sure you want to clear your entire watch history?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem('@joyflix_watch_history');
+              setHistory([]);
+            } catch (e) {
+              console.error(e);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const removeHistoryItem = async (id: string) => {
     try {
-      await AsyncStorage.removeItem('@joyflix_discord_token');
-      setDiscordToken(null);
-      setDiscordProfile(null);
-      Alert.alert('Logged Out', 'Successfully logged out of Discord.');
+      const updated = history.filter((item) => item.id !== id);
+      setHistory(updated);
+      await AsyncStorage.setItem('@joyflix_watch_history', JSON.stringify(updated));
     } catch (e) {
       console.error(e);
     }
   };
 
-  const toggleRpc = async (val: boolean) => {
-    setRpcEnabled(val);
-    try {
-      await AsyncStorage.setItem('@joyflix_discord_rpc_enabled', String(val));
-    } catch (e) {
-      console.error(e);
-    }
+  const handlePlayHistory = (item: any) => {
+    router.push({
+      pathname: '/watch',
+      params: { tmdbId: item.tmdbId, type: item.type },
+    });
   };
 
   const loadDownloads = async () => {
@@ -102,27 +104,7 @@ export default function SettingsScreen() {
     }
   };
 
-  useEffect(() => {
-    loadSettings();
-    loadDownloads();
-  }, []);
-
-  // Poll for settings changes (when user comes back from login modal)
-  useEffect(() => {
-    const checkState = () => {
-      AsyncStorage.getItem('@joyflix_discord_token').then((token) => {
-        if (token && token !== discordToken) {
-          setDiscordToken(token);
-          fetchDiscordProfile(token);
-        }
-      });
-      loadDownloads();
-    };
-    const interval = setInterval(checkState, 3000);
-    return () => clearInterval(interval);
-  }, [discordToken]);
-
-  const handleDeleteDownload = (id: string, title: string) => {
+  const handleDeleteDownload = async (id: string, title: string) => {
     Alert.alert(
       'Delete Download',
       `Are you sure you want to delete "${title}" offline file?`,
@@ -132,10 +114,11 @@ export default function SettingsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            const success = await downloadManager.deleteDownload(id);
-            if (success) {
+            try {
+              await downloadManager.deleteDownload(id);
               loadDownloads();
-            } else {
+            } catch (e) {
+              console.error(e);
               Alert.alert('Error', 'Failed to delete downloaded file.');
             }
           },
@@ -166,66 +149,130 @@ export default function SettingsScreen() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const formatTime = (timestamp: number) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + 
+             date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: true });
+    } catch (e) {
+      return '';
+    }
+  };
+
+  useEffect(() => {
+    loadWatchHistory();
+    loadDownloads();
+  }, []);
+
+  // Poll for downloads updates and watch history periodically
+  useEffect(() => {
+    const checkState = () => {
+      loadDownloads();
+      // Only silent reload watch history
+      AsyncStorage.getItem('@joyflix_watch_history').then((stored) => {
+        if (stored) {
+          setHistory(JSON.parse(stored));
+        } else {
+          setHistory([]);
+        }
+      });
+    };
+    const interval = setInterval(checkState, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <Text style={styles.headerTitle}>Settings</Text>
 
-      {/* SECTION: Discord Integration */}
+      {/* SECTION: Watch History */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Discord Integration</Text>
-        
-        {profileLoading ? (
-          <ActivityIndicator size="small" color="#a855f7" style={{ marginVertical: 20 }} />
-        ) : discordProfile ? (
-          <View style={styles.discordProfileCard}>
-            <View style={styles.profileRow}>
-              <Image
-                source={{
-                  uri: discordProfile.avatar
-                    ? `https://cdn.discordapp.com/avatars/${discordProfile.id}/${discordProfile.avatar}.png`
-                    : 'https://cdn.discordapp.com/embed/avatars/0.png',
-                }}
-                style={styles.discordAvatar}
-              />
-              <View style={styles.profileDetails}>
-                <Text style={styles.discordName}>
-                  {discordProfile.global_name || discordProfile.username}
-                </Text>
-                <Text style={styles.discordTag}>@{discordProfile.username}</Text>
-              </View>
-              <TouchableOpacity onPress={logoutDiscord} style={styles.logoutBtn}>
-                <LogOut color="#ef4444" size={20} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.switchRow}>
-              <View style={styles.switchTextContainer}>
-                <Text style={styles.switchLabel}>Discord Activity Status</Text>
-                <Text style={styles.switchDesc}>Display what you watch on your Discord profile.</Text>
-              </View>
-              <Switch
-                value={rpcEnabled}
-                onValueChange={toggleRpc}
-                trackColor={{ false: '#3f3f46', true: '#a855f7' }}
-                thumbColor={rpcEnabled ? '#fff' : '#a1a1aa'}
-              />
-            </View>
-          </View>
-        ) : (
-          <View style={styles.discordLoginCard}>
-            <Text style={styles.loginDesc}>
-              Link your Discord account to share your watching activity as your Discord custom status!
-            </Text>
-            <TouchableOpacity
-              style={styles.discordLoginBtn}
-              onPress={() => router.push('/discord-login')}
-            >
-              <LogIn color="#fff" size={20} />
-              <Text style={styles.discordLoginText}>LOG IN WITH DISCORD</Text>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionTitle}>Watch History</Text>
+          {history.length > 0 && (
+            <TouchableOpacity style={styles.clearHistoryBtn} onPress={clearWatchHistory}>
+              <Trash2 color="#f87171" size={14} />
+              <Text style={styles.clearHistoryText}>Clear History</Text>
             </TouchableOpacity>
+          )}
+        </View>
+        
+        {historyLoading ? (
+          <ActivityIndicator size="small" color="#a855f7" style={{ marginVertical: 20 }} />
+        ) : history.length > 0 ? (
+          <FlatList
+            data={history}
+            keyExtractor={item => item.id}
+            scrollEnabled={false}
+            renderItem={({ item }) => (
+              <View style={styles.historyCard}>
+                <Image
+                  source={{ uri: item.posterUrl || 'https://via.placeholder.com/150x220' }}
+                  style={styles.historyPoster}
+                />
+                <View style={styles.historyDetails}>
+                  <Text style={styles.historyTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.historySub}>
+                    {item.type === 'tv' ? `S${item.season} E${item.episode} | ` : ''}
+                    {item.type === 'tv' ? 'TV Show' : 'Movie'}
+                  </Text>
+                  <Text style={styles.historyTime}>{formatTime(item.watchedAt)}</Text>
+                </View>
+                <View style={styles.historyActions}>
+                  <TouchableOpacity
+                    style={styles.playHistoryBtn}
+                    onPress={() => handlePlayHistory(item)}
+                  >
+                    <Play color="#fff" size={16} fill="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteHistoryBtn}
+                    onPress={() => removeHistoryItem(item.id)}
+                  >
+                    <Trash2 color="#ef4444" size={16} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          />
+        ) : (
+          <View style={styles.emptyHistoryCard}>
+            <Clock color="#71717a" size={32} style={{ marginBottom: 8 }} />
+            <Text style={styles.emptyText}>No watch history found.</Text>
+            <Text style={styles.emptySubText}>
+              Shows and movies you play will be recorded here so you can easily return to them.
+            </Text>
           </View>
         )}
       </View>
+
+      {/* SECTION: Active Downloads */}
+      {activeDownloads.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Active Downloads</Text>
+          <FlatList
+            data={activeDownloads}
+            keyExtractor={item => item.id}
+            scrollEnabled={false}
+            renderItem={({ item }) => (
+              <View style={styles.historyCard}>
+                <ActivityIndicator size="small" color="#a855f7" style={{ marginRight: 10 }} />
+                <View style={styles.historyDetails}>
+                  <Text style={styles.historyTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.historySub}>
+                    {item.type === 'tv' ? `S${item.season} E${item.episode} | ` : ''}
+                    Downloading... ({item.progressText})
+                  </Text>
+                </View>
+              </View>
+            )}
+          />
+        </View>
+      )}
 
       {/* SECTION: Offline Downloads Manager */}
       <View style={styles.section}>
@@ -335,92 +382,84 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 6,
   },
-  discordLoginCard: {
+  
+  // Watch History Card styles
+  historyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#18181b',
     borderWidth: 1,
     borderColor: '#27272a',
     borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
+    padding: 10,
+    marginBottom: 10,
   },
-  loginDesc: {
-    color: '#a1a1aa',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
+  historyPoster: {
+    width: 45,
+    height: 65,
+    borderRadius: 6,
+    resizeMode: 'cover',
   },
-  discordLoginBtn: {
-    backgroundColor: '#5865F2', // Discord Blue
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  discordLoginText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-    marginLeft: 8,
-  },
-  discordProfileCard: {
-    backgroundColor: '#18181b',
-    borderWidth: 1,
-    borderColor: '#27272a',
-    borderRadius: 12,
-    padding: 16,
-  },
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#27272a',
-    paddingBottom: 14,
-  },
-  discordAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
-  profileDetails: {
+  historyDetails: {
     flex: 1,
     marginLeft: 12,
+    paddingRight: 8,
   },
-  discordName: {
+  historyTitle: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
   },
-  discordTag: {
-    color: '#71717a',
-    fontSize: 13,
+  historySub: {
+    color: '#a1a1aa',
+    fontSize: 12,
+    marginTop: 4,
   },
-  logoutBtn: {
+  historyTime: {
+    color: '#71717a',
+    fontSize: 11,
+    marginTop: 4,
+  },
+  historyActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  playHistoryBtn: {
+    padding: 8,
+    backgroundColor: '#27272a',
+    borderRadius: 8,
+    marginRight: 6,
+  },
+  deleteHistoryBtn: {
     padding: 8,
     backgroundColor: '#27272a',
     borderRadius: 8,
   },
-  switchRow: {
+  clearHistoryBtn: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 14,
+    backgroundColor: '#3f1a1a',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  switchTextContainer: {
-    flex: 1,
-    paddingRight: 16,
-  },
-  switchLabel: {
-    color: '#fff',
-    fontSize: 14,
+  clearHistoryText: {
+    color: '#f87171',
+    fontSize: 12,
     fontWeight: 'bold',
+    marginLeft: 6,
   },
-  switchDesc: {
-    color: '#71717a',
-    fontSize: 11,
-    marginTop: 2,
+  emptyHistoryCard: {
+    backgroundColor: '#18181b',
+    borderWidth: 1,
+    borderColor: '#27272a',
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+
+  // Offline Downloads styles
   downloadCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -448,28 +487,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   downloadSub: {
-    color: '#71717a',
-    fontSize: 11,
-    marginTop: 2,
+    color: '#a1a1aa',
+    fontSize: 12,
+    marginTop: 4,
   },
   downloadSize: {
-    color: '#a855f7',
+    color: '#71717a',
     fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
+    marginTop: 4,
   },
   downloadActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   playOfflineBtn: {
-    backgroundColor: '#a855f7',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
+    padding: 8,
+    backgroundColor: '#27272a',
+    borderRadius: 8,
+    marginRight: 6,
   },
   deleteOfflineBtn: {
     padding: 8,
@@ -486,8 +521,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyText: {
-    color: '#e4e4e7',
-    fontSize: 14,
+    color: '#fff',
+    fontSize: 15,
     fontWeight: 'bold',
   },
   emptySubText: {
@@ -495,6 +530,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
-    lineHeight: 16,
+    paddingHorizontal: 12,
   },
 });

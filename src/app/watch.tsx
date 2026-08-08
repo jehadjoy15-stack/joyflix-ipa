@@ -12,6 +12,8 @@ import {
   FlatList,
   Modal,
   Alert,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Play, Download, Plus, Check, Star, RefreshCw } from 'lucide-react-native';
@@ -21,7 +23,7 @@ import { tmdb, TMDBItem, CastMember, Episode } from '../services/tmdb';
 import { tsunade, StreamSource, SubtitleSource } from '../services/scrapers/tsunade';
 import { multimovies } from '../services/scrapers/multimovies';
 import { subtitlecat } from '../services/scrapers/subtitlecat';
-import { downloadManager } from '../services/download';
+import { downloadManager, ActiveDownload } from '../services/download';
 
 const { width } = Dimensions.get('window');
 
@@ -57,6 +59,57 @@ export default function WatchDetailsScreen() {
   const [showDubModal, setShowDubModal] = useState(false);
   const [dubSelectionAction, setDubSelectionAction] = useState<'play' | 'download'>('play');
   const [downloadProgress, setDownloadProgress] = useState<number>(-1);
+  const [downloadProgressText, setDownloadProgressText] = useState<string>('');
+
+  const requestStoragePermission = async () => {
+    if (Platform.OS !== 'android') return true;
+    try {
+      if (Platform.Version >= 33) {
+        const grantedStatus = await PermissionsAndroid.request(
+          (PermissionsAndroid.PERMISSIONS as any).READ_MEDIA_VIDEO,
+          {
+            title: 'Storage Permission Required',
+            message: 'Joyflix needs access to write downloaded videos to your device.',
+            buttonPositive: 'Grant',
+            buttonNegative: 'Deny',
+          }
+        );
+        return grantedStatus === PermissionsAndroid.RESULTS.GRANTED;
+      } else {
+        const grantedStatus = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+          {
+            title: 'Storage Permission Required',
+            message: 'Joyflix needs access to write downloaded videos to your device.',
+            buttonPositive: 'Grant',
+            buttonNegative: 'Deny',
+          }
+        );
+        return grantedStatus === PermissionsAndroid.RESULTS.GRANTED;
+      }
+    } catch (err) {
+      console.warn(err);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = downloadManager.subscribeActiveDownloads((active) => {
+      const found = active.find(
+        d => d.tmdbId === tmdbId &&
+        d.type === mediaType &&
+        (mediaType === 'tv' ? (d.season === selectedSeason && d.episode === selectedEpisode) : true)
+      );
+      if (found) {
+        setDownloadProgress(found.progress >= 0 ? found.progress : 0.01);
+        setDownloadProgressText(found.progressText);
+      } else {
+        setDownloadProgress(-1);
+        setDownloadProgressText('');
+      }
+    });
+    return () => unsubscribe();
+  }, [tmdbId, mediaType, selectedSeason, selectedEpisode]);
 
   const init = async () => {
     setLoading(true);
@@ -316,6 +369,9 @@ export default function WatchDetailsScreen() {
           episode: mediaType === 'tv' ? selectedEpisode : '',
           type: mediaType,
           tmdbId,
+          coverUrl: details.backdrop_path ? `https://image.tmdb.org/t/p/w1280${details.backdrop_path}` : undefined,
+          overview: mediaType === 'tv' && selectedEpDetails?.overview ? selectedEpDetails.overview : (details.overview || ''),
+          rating: details.vote_average ? String(details.vote_average.toFixed(1)) : '0.0',
         },
       });
       return;
@@ -334,7 +390,12 @@ export default function WatchDetailsScreen() {
       return;
     }
 
-    if (downloadProgress >= 0) {
+    const isActive = downloadManager.activeDownloads.some(
+      d => d.tmdbId === tmdbId && 
+      d.type === mediaType && 
+      (mediaType === 'tv' ? (d.season === selectedSeason && d.episode === selectedEpisode) : true)
+    );
+    if (isActive || downloadProgress >= 0) {
       Alert.alert('Downloading', 'Download is already in progress.');
       return;
     }
@@ -348,7 +409,27 @@ export default function WatchDetailsScreen() {
 
   const startDownloadItem = async (stream: StreamSource) => {
     setShowDubModal(false);
+
+    // Request storage permission on Android
+    const hasPermission = await requestStoragePermission();
+    if (!hasPermission) {
+      Alert.alert('Permission Denied', 'Storage permission is required to save downloads.');
+      return;
+    }
+
+    // Prevent duplicate downloads
+    const isActive = downloadManager.activeDownloads.some(
+      d => d.tmdbId === tmdbId && 
+      d.type === mediaType && 
+      (mediaType === 'tv' ? (d.season === selectedSeason && d.episode === selectedEpisode) : true)
+    );
+    if (isActive) {
+      Alert.alert('Downloading', 'This movie/episode is already downloading in the background.');
+      return;
+    }
+
     setDownloadProgress(0);
+    setDownloadProgressText('0%');
 
     const titleLabel = mediaType === 'tv'
       ? `${details.name} - S${String(selectedSeason).padStart(2, '0')}E${String(selectedEpisode).padStart(2, '0')}`
@@ -367,15 +448,18 @@ export default function WatchDetailsScreen() {
           posterUrl: details.poster_path ? `https://image.tmdb.org/t/p/w300${details.poster_path}` : undefined,
         },
         (progress) => {
-          setDownloadProgress(progress);
+          // Progress is updated automatically by subscribeActiveDownloads
         }
       );
 
       Alert.alert('Download Completed', `"${result.title}" downloaded successfully for offline viewing.`);
       checkDownloadStatus();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      Alert.alert('Download Failed', 'An error occurred during video download.');
+      Alert.alert(
+        'Download Failed',
+        e && e.message ? `Error: ${e.message}` : 'An error occurred during video download.'
+      );
     } finally {
       setDownloadProgress(-1);
     }
@@ -398,6 +482,8 @@ export default function WatchDetailsScreen() {
           dubLang: stream.lang || 'Original',
           coverUrl: details.backdrop_path ? `https://image.tmdb.org/t/p/w1280${details.backdrop_path}` : undefined,
           subtitles: JSON.stringify(subtitles),
+          overview: mediaType === 'tv' && selectedEpDetails?.overview ? selectedEpDetails.overview : (details.overview || ''),
+          rating: details.vote_average ? String(details.vote_average.toFixed(1)) : '0.0',
         },
       });
     } else {
@@ -481,9 +567,9 @@ export default function WatchDetailsScreen() {
               {downloadProgress >= 0 ? (
                 <View style={styles.downloadProgressBadge}>
                   <RefreshCw color="#a855f7" size={16} style={{ transform: [{ rotate: '45deg' }] }} />
-                  <Text style={styles.downloadProgressText}>
-                    {Math.round(downloadProgress * 100)}%
-                  </Text>
+                    <Text style={styles.downloadProgressText}>
+                      {downloadProgressText}
+                    </Text>
                 </View>
               ) : (
                 <TouchableOpacity
@@ -646,17 +732,30 @@ export default function WatchDetailsScreen() {
               {dubSelectionAction === 'play' ? 'Select Server & Dub' : 'Select Dub to Download'}
             </Text>
             <ScrollView style={styles.modalScroll}>
-              {streams.map((stream, idx) => (
-                <TouchableOpacity
-                  key={`dub_sel_${idx}`}
-                  style={styles.modalItem}
-                  onPress={() => handleSelectDub(stream)}
-                >
-                  <Play color="#a855f7" size={16} style={{ marginRight: 10 }} />
-                  <Text style={styles.modalItemText}>{stream.server}</Text>
-                  <Text style={styles.modalItemSub}>({stream.quality})</Text>
-                </TouchableOpacity>
-              ))}
+              {streams
+                .filter(stream => {
+                  if (dubSelectionAction === 'download') {
+                    const urlLower = stream.url.toLowerCase();
+                    const serverLower = stream.server.toLowerCase();
+                    return (
+                      urlLower.includes('.mp4') || 
+                      urlLower.includes('.mkv') || 
+                      serverLower.includes('moviebox')
+                    );
+                  }
+                  return true;
+                })
+                .map((stream, idx) => (
+                  <TouchableOpacity
+                    key={`dub_sel_${idx}`}
+                    style={styles.modalItem}
+                    onPress={() => handleSelectDub(stream)}
+                  >
+                    <Play color="#a855f7" size={16} style={{ marginRight: 10 }} />
+                    <Text style={styles.modalItemText}>{stream.server}</Text>
+                    <Text style={styles.modalItemSub}>({stream.quality})</Text>
+                  </TouchableOpacity>
+                ))}
             </ScrollView>
             <TouchableOpacity
               style={styles.modalCloseBtn}
