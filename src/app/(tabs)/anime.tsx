@@ -100,14 +100,7 @@ export default function AnimeScreen() {
     });
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#a855f7" />
-        <Text style={styles.loadingText}>Loading Anime Universe...</Text>
-      </View>
-    );
-  }
+
 
   const inWatchlist = heroAnime ? watchlist.includes(heroAnime.id) : false;
 

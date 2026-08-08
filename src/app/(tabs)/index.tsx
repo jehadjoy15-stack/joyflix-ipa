@@ -130,14 +130,7 @@ export default function HomeScreen() {
     });
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#a855f7" />
-        <Text style={styles.loadingText}>Preparing JoyFlix...</Text>
-      </View>
-    );
-  }
+
 
   const inWatchlist = heroItem ? watchlist.includes(heroItem.id) : false;
 

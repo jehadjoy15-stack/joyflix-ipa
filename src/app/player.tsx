@@ -16,6 +16,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { ArrowLeft, Play, Pause, Settings, RotateCcw, Volume2, Sun, SkipForward } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { WebView } from 'react-native-webview';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 import { admin } from '../services/admin';
 import { discordRpc } from '../services/discordRpc';
@@ -40,6 +42,21 @@ export default function CustomVideoPlayerScreen() {
 
   const isOffline = !!offlinePath;
   const playbackSource = isOffline ? offlinePath : streamUrl;
+
+  // Lock orientation to LANDSCAPE when player mounts, and unlock on unmount
+  useEffect(() => {
+    async function lockOrientation() {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    }
+    lockOrientation();
+
+    return () => {
+      async function unlockOrientation() {
+        await ScreenOrientation.unlockAsync();
+      }
+      unlockOrientation();
+    };
+  }, []);
 
   // Status & Access States
   const [accessChecked, setAccessChecked] = useState(false);
@@ -183,6 +200,8 @@ export default function CustomVideoPlayerScreen() {
           coverUrl,
           tmdbId,
           type,
+          season: season ? Number(season) : undefined,
+          episode: episode ? Number(episode) : undefined,
         });
       }
     } catch (e) {
@@ -354,6 +373,46 @@ export default function CustomVideoPlayerScreen() {
         <TouchableOpacity style={styles.backHomeBtn} onPress={() => router.back()}>
           <Text style={styles.backHomeText}>Return to App</Text>
         </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // If online, use the premium sanae web player inside WebView
+  if (!isOffline) {
+    const dubParam = params.dubName ? `&dub=${encodeURIComponent(params.dubName as string)}&server=${encodeURIComponent(params.dubName as string)}` : '';
+    const webPlayerUrl = type === 'movie'
+      ? `https://sanae.joyflix.fun/movie/${tmdbId}?key=70e72ab91e1180976a71072fbcf313db${dubParam}`
+      : `https://sanae.joyflix.fun/tv/${tmdbId}/${season}/${episode}?key=70e72ab91e1180976a71072fbcf313db${dubParam}`;
+
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <StatusBar hidden={true} />
+        
+        {/* Floating Back Button */}
+        <TouchableOpacity 
+          style={{ 
+            position: 'absolute', 
+            top: 20, 
+            left: 20, 
+            zIndex: 9999, 
+            backgroundColor: 'rgba(0,0,0,0.5)', 
+            padding: 8, 
+            borderRadius: 20 
+          }} 
+          onPress={() => router.back()}
+        >
+          <ArrowLeft color="#fff" size={24} />
+        </TouchableOpacity>
+
+        <WebView
+          source={{ uri: webPlayerUrl }}
+          style={{ flex: 1 }}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          allowsFullscreenVideo={true}
+          mediaPlaybackRequiresUserAction={false}
+          backgroundColor="#000"
+        />
       </View>
     );
   }

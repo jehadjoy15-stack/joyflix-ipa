@@ -197,6 +197,8 @@ class DiscordRpcService {
     coverUrl?: string;
     tmdbId?: number;
     type?: 'movie' | 'tv';
+    season?: number;
+    episode?: number;
   }): Promise<void> {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.currentToken) {
       console.log('DiscordRPC: Cannot update presence, not connected.');
@@ -221,7 +223,10 @@ class DiscordRpcService {
     }
 
     const startTime = Date.now();
-    const watchUrl = `https://joyflix.fun/watch/${params.type || 'movie'}/${params.tmdbId || ''}`;
+    let watchUrl = `https://joyflix.fun/watch/${params.type || 'movie'}/${params.tmdbId || ''}`;
+    if (params.type === 'tv') {
+      watchUrl = `https://joyflix.fun/watch/tv/${params.tmdbId || ''}/${params.season || 1}/${params.episode || 1}`;
+    }
 
     const payload = {
       status: 'online',
