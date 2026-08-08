@@ -150,9 +150,9 @@ class DiscordRpcService {
       token: this.currentToken,
       capabilities: 16381,
       properties: {
-        os: 'Android',
-        browser: 'Discord Android',
-        device: 'Kizzy'
+        $os: 'android',
+        $browser: 'Discord Android',
+        $device: 'Kizzy'
       },
       presence: {
         status: 'online',
