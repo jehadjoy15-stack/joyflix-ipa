@@ -19,7 +19,13 @@ class DiscordRpcService {
     if (this.isConnected && this.currentToken === token) return;
     
     await this.disconnect();
-    this.currentToken = token;
+    
+    // Clean token (case-insensitive strip of Bearer prefix)
+    let cleanToken = token.trim();
+    if (cleanToken.toLowerCase().startsWith('bearer ')) {
+      cleanToken = cleanToken.substring(7).trim();
+    }
+    this.currentToken = cleanToken;
     this.isIdentified = false;
 
     try {
@@ -146,19 +152,17 @@ class DiscordRpcService {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.currentToken) return;
     console.log('DiscordRPC: Sending Identify...');
     
+    // Exact com.my.kizzy Identify payload structure from Metrolist-main
     const payload = {
       token: this.currentToken,
-      capabilities: 16381,
+      capabilities: 65,
+      compress: false,
+      largeThreshold: 100,
+      large_threshold: 100,
       properties: {
-        os: 'Android',
-        browser: 'Discord Android',
-        device: 'Kizzy'
-      },
-      presence: {
-        status: 'online',
-        since: 0,
-        activities: [],
-        afk: false
+        browser: 'Discord Client',
+        device: 'ktor',
+        os: 'Windows'
       }
     };
 
