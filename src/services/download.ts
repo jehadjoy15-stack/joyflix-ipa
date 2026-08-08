@@ -1,6 +1,18 @@
 // src/services/download.ts
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+
+export function resolveLocalPath(savedPath: string): string {
+  if (!savedPath) return '';
+  if (Platform.OS === 'ios') {
+    const filename = savedPath.split('/').pop();
+    if (filename) {
+      return `${FileSystem.documentDirectory}${filename}`;
+    }
+  }
+  return savedPath;
+}
 
 export interface DownloadItem {
   id: string; // Unique ID: e.g. "movie_123" or "tv_123_1_1"
@@ -74,10 +86,12 @@ export const downloadManager = {
       // Verify files actually exist on disk (clean up broken logs)
       const verifiedList: DownloadItem[] = [];
       for (const item of list) {
-        const fileInfo = await FileSystem.getInfoAsync(item.filePath);
+        const resolvedPath = resolveLocalPath(item.filePath);
+        const fileInfo = await FileSystem.getInfoAsync(resolvedPath);
         if (fileInfo.exists) {
           verifiedList.push({
             ...item,
+            filePath: resolvedPath,
             fileSize: (fileInfo as any).size,
           });
         }
@@ -103,7 +117,7 @@ export const downloadManager = {
       (type === 'tv' ? (item.season === season && item.episode === episode) : true)
     );
     if (found) {
-      return { downloaded: true, filePath: found.filePath };
+      return { downloaded: true, filePath: resolveLocalPath(found.filePath) };
     }
     return { downloaded: false, filePath: '' };
   },
@@ -252,7 +266,7 @@ export const downloadManager = {
       if (!item) return false;
 
       // Delete the file from the filesystem
-      await FileSystem.deleteAsync(item.filePath, { idempotent: true });
+      await FileSystem.deleteAsync(resolveLocalPath(item.filePath), { idempotent: true });
 
       // Remove from storage list
       const updatedList = list.filter(d => d.id !== id);
