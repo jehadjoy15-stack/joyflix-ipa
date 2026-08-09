@@ -479,7 +479,7 @@ export default function WatchDetailsScreen() {
           type: mediaType,
           tmdbId,
           dubName: stream.server,
-          dubLang: stream.lang || 'Original',
+          dubLang: stream.lang || stream.label || 'Original',
           coverUrl: details.backdrop_path ? `https://image.tmdb.org/t/p/w1280${details.backdrop_path}` : undefined,
           subtitles: JSON.stringify(subtitles),
           overview: mediaType === 'tv' && selectedEpDetails?.overview ? selectedEpDetails.overview : (details.overview || ''),
@@ -752,7 +752,9 @@ export default function WatchDetailsScreen() {
                     onPress={() => handleSelectDub(stream)}
                   >
                     <Play color="#a855f7" size={16} style={{ marginRight: 10 }} />
-                    <Text style={styles.modalItemText}>{stream.server}</Text>
+                      <Text style={styles.modalItemText}>
+                        {stream.server} {stream.lang || stream.label ? `[${stream.lang || stream.label}]` : ''}
+                      </Text>
                     <Text style={styles.modalItemSub}>({stream.quality})</Text>
                   </TouchableOpacity>
                 ))}
