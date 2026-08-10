@@ -465,6 +465,62 @@ export default function WatchDetailsScreen() {
     }
   };
 
+  // Helper to normalize and get language name
+  const getStreamLanguage = (stream: StreamSource): string => {
+    const lang = (stream.lang || stream.label || '').trim();
+    if (lang) {
+      const lower = lang.toLowerCase();
+      if (lower.includes('hindi') || lower === 'hi' || lower === 'hin') return 'Hindi';
+      if (lower.includes('bengali') || lower.includes('bangla') || lower === 'bn' || lower === 'ben') return 'Bengali';
+      if (lower.includes('english') || lower === 'en' || lower === 'eng') return 'English';
+      if (lower.includes('tamil') || lower === 'ta' || lower === 'tam') return 'Tamil';
+      if (lower.includes('telugu') || lower === 'te' || lower === 'tel') return 'Telugu';
+      if (lower.includes('original') || lower.includes('jp') || lower.includes('jap')) return 'Original';
+      return lang.charAt(0).toUpperCase() + lang.slice(1).toLowerCase();
+    }
+    
+    const serverLower = (stream.server || '').toLowerCase();
+    if (serverLower.includes('hindi')) return 'Hindi';
+    if (serverLower.includes('bengali') || serverLower.includes('bangla')) return 'Bengali';
+    if (serverLower.includes('english')) return 'English';
+    if (serverLower.includes('tamil')) return 'Tamil';
+    if (serverLower.includes('telugu')) return 'Telugu';
+    if (serverLower.includes('original')) return 'Original';
+    
+    return 'Original';
+  };
+
+  // Helper to prioritize and select the best stream quality from list
+  const selectBestStream = (langStreams: StreamSource[]): StreamSource => {
+    const priority = ['1080p', '720p', 'Auto', '1080', '720'];
+    for (const p of priority) {
+      const match = langStreams.find(s => (s.quality || '').toLowerCase().includes(p.toLowerCase()));
+      if (match) return match;
+    }
+    return langStreams[0];
+  };
+
+  const handleSelectLanguage = (lang: string) => {
+    const filtered = streams.filter(stream => {
+      if (dubSelectionAction === 'download') {
+        const urlLower = stream.url.toLowerCase();
+        const serverLower = stream.server.toLowerCase();
+        return (
+          urlLower.includes('.mp4') || 
+          urlLower.includes('.mkv') || 
+          serverLower.includes('moviebox')
+        );
+      }
+      return true;
+    });
+
+    const langStreams = filtered.filter(s => getStreamLanguage(s) === lang);
+    if (langStreams.length > 0) {
+      const best = selectBestStream(langStreams);
+      handleSelectDub(best);
+    }
+  };
+
   const handleSelectDub = (stream: StreamSource) => {
     setShowDubModal(false);
     if (dubSelectionAction === 'play') {
@@ -729,14 +785,15 @@ export default function WatchDetailsScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
-              {dubSelectionAction === 'play' ? 'Select Server & Dub' : 'Select Dub to Download'}
+              {dubSelectionAction === 'play' ? 'Select Audio Language' : 'Select Download Language'}
             </Text>
             <ScrollView style={styles.modalScroll}>
-              {streams
-                .filter(stream => {
+              {(() => {
+                // Filter streams depending on action
+                const activeStreams = streams.filter(stream => {
                   if (dubSelectionAction === 'download') {
-                    const urlLower = stream.url.toLowerCase();
-                    const serverLower = stream.server.toLowerCase();
+                    const urlLower = (stream.url || '').toLowerCase();
+                    const serverLower = (stream.server || '').toLowerCase();
                     return (
                       urlLower.includes('.mp4') || 
                       urlLower.includes('.mkv') || 
@@ -744,20 +801,46 @@ export default function WatchDetailsScreen() {
                     );
                   }
                   return true;
-                })
-                .map((stream, idx) => (
-                  <TouchableOpacity
-                    key={`dub_sel_${idx}`}
-                    style={styles.modalItem}
-                    onPress={() => handleSelectDub(stream)}
-                  >
-                    <Play color="#a855f7" size={16} style={{ marginRight: 10 }} />
-                      <Text style={styles.modalItemText}>
-                        {stream.server} {stream.lang || stream.label ? `[${stream.lang || stream.label}]` : ''}
-                      </Text>
-                    <Text style={styles.modalItemSub}>({stream.quality})</Text>
-                  </TouchableOpacity>
-                ))}
+                });
+
+                // Group streams by normalized language name
+                const groupedStreams: { [lang: string]: StreamSource[] } = {};
+                activeStreams.forEach((stream) => {
+                  const lang = getStreamLanguage(stream);
+                  if (!groupedStreams[lang]) {
+                    groupedStreams[lang] = [];
+                  }
+                  groupedStreams[lang].push(stream);
+                });
+
+                const languages = Object.keys(groupedStreams);
+
+                if (languages.length === 0) {
+                  return (
+                    <Text style={{ color: '#aaa', textAlign: 'center', marginTop: 20 }}>
+                      No available options for this selection.
+                    </Text>
+                  );
+                }
+
+                return languages.map((lang, idx) => {
+                  const langStreams = groupedStreams[lang];
+                  const bestStream = selectBestStream(langStreams);
+                  return (
+                    <TouchableOpacity
+                      key={`lang_sel_${idx}`}
+                      style={styles.modalItem}
+                      onPress={() => {
+                        handleSelectLanguage(lang);
+                      }}
+                    >
+                      <Play color="#a855f7" size={16} style={{ marginRight: 10 }} />
+                      <Text style={styles.modalItemText}>{lang}</Text>
+                      <Text style={styles.modalItemSub}>({bestStream.quality})</Text>
+                    </TouchableOpacity>
+                  );
+                });
+              })()}
             </ScrollView>
             <TouchableOpacity
               style={styles.modalCloseBtn}

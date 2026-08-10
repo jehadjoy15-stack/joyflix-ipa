@@ -16,7 +16,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { ArrowLeft, Play, Pause, Settings, RotateCcw, Volume2, Sun, SkipForward } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WebView } from 'react-native-webview';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
 import { admin } from '../services/admin';
@@ -456,81 +455,7 @@ export default function CustomVideoPlayerScreen() {
     );
   }
 
-  // If online, use the premium sanae web player inside WebView
-  if (!isOffline) {
-    const dubParam = params.dubLang && params.dubLang !== 'Original' ? `&dub=${encodeURIComponent(params.dubLang as string)}` : '';
-    const webPlayerUrl = type === 'movie'
-      ? `https://sanae.joyflix.fun/?tmdb=${tmdbId}&type=movie${dubParam}`
-      : `https://sanae.joyflix.fun/?tmdb=${tmdbId}&type=tv&season=${season}&episode=${episode}${dubParam}`;
 
-    const injectedJS = `
-      (function() {
-        const title = ${JSON.stringify(params.title || 'JoyFlix')};
-        const type = ${JSON.stringify(params.type || 'movie')};
-        const coverUrl = ${JSON.stringify(params.coverUrl || '')};
-        const detailText = type === 'tv' ? 'TV Show' : 'Movie';
-
-        function updateMediaSession() {
-          if ('mediaSession' in navigator) {
-            navigator.mediaSession.metadata = new MediaMetadata({
-              title: title,
-              artist: 'JoyFlix',
-              album: detailText,
-              artwork: coverUrl ? [{ src: coverUrl, sizes: '512x512', type: 'image/png' }] : []
-            });
-            
-            // Wire play/pause actions
-            const video = document.querySelector('video');
-            if (video) {
-              navigator.mediaSession.setActionHandler('play', () => video.play());
-              navigator.mediaSession.setActionHandler('pause', () => video.pause());
-            }
-          }
-        }
-
-        updateMediaSession();
-        document.addEventListener('play', updateMediaSession, true);
-        document.addEventListener('playing', updateMediaSession, true);
-        setInterval(updateMediaSession, 2000);
-      })();
-      true;
-    `;
-
-    return (
-      <View style={{ flex: 1, backgroundColor: '#000' }}>
-        <StatusBar hidden={true} />
-        
-        {/* Floating Back Button */}
-        <TouchableOpacity 
-          style={{ 
-            position: 'absolute', 
-            top: 20, 
-            left: 20, 
-            zIndex: 9999, 
-            backgroundColor: 'rgba(0,0,0,0.5)', 
-            padding: 8, 
-            borderRadius: 20 
-          }} 
-          onPress={() => router.back()}
-        >
-          <ArrowLeft color="#fff" size={24} />
-        </TouchableOpacity>
-
-        <WebView
-          source={{ uri: webPlayerUrl }}
-          style={{ flex: 1 }}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          allowsFullscreenVideo={true}
-          allowsInlineMediaPlayback={true}
-          mediaPlaybackRequiresUserAction={false}
-          backgroundColor="#000"
-          injectedJavaScript={injectedJS}
-          userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-        />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
