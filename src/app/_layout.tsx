@@ -20,7 +20,6 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="watch" />
         <Stack.Screen name="player" />
-        <Stack.Screen name="discord-login" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       </Stack>
     </GestureHandlerRootView>
   );

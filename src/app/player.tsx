@@ -143,7 +143,7 @@ export default function CustomVideoPlayerScreen() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Initialize expo-video player
-  const player = useVideoPlayer(playbackSource, (playerInstance) => {
+  const player = useVideoPlayer(playbackSource ? { uri: playbackSource } : null, (playerInstance) => {
     playerInstance.loop = false;
     playerInstance.play();
   });
